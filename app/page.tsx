@@ -1,6 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
+export const metadata: Metadata = {
+	title: "EduFind | College Discovery with AI Counselor",
+	description:
+		"Discover Indian colleges with deep profiles, compare side by side, and get Gemini-powered counseling grounded in real cutoff and placement data.",
+	openGraph: {
+		title: "EduFind | College Discovery with AI Counselor",
+		description:
+			"Search, compare, and shortlist colleges with an AI counselor grounded in real data.",
+		type: "website",
+	},
+};
 
 const featureCards = [
 	{

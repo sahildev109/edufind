@@ -1,0 +1,625 @@
+EduFind is a production-grade college discovery and decision-making platform that helps prospective students in India research, compare, and choose institutions with confidence. The platform differentiates itself through a powerful AI counselor (Gemini 2.5 Flash) that provides personalized college shortlisting and counseling based on a student's academic profile, budget, and goals — going far beyond simple search filters.
+The system is architected as a full-stack Next.js 14 application using the App Router, with server-side rendering for public pages, React Server Components for data-heavy views, and client components only where interactivity is needed. Data is stored in a PostgreSQL database on Neon and accessed via Prisma ORM. Authentication uses JWT with refresh token rotation.
+1.1 Features Selected
+Per task requirements, four features have been chosen and will each be built to production quality:
+2.1 High-Level Architecture
+EduFind follows a layered architecture where concerns are cleanly separated across the request lifecycle:
+2.2 Rendering Strategy
+Next.js 14 App Router enables mixing rendering strategies per route:
+2.3 Directory Structure
+The schema is designed for query efficiency. Colleges are the central entity, with all related data normalized into separate tables and joined on demand. Indexes are added on every filterable/sortable column to keep listing queries fast even with large datasets.
+3.1 Entity-Relationship Overview
+3.2 Prisma Schema
+4.1 Feature 1 — College Listing + Search
+4.1.1 What It Does
+A server-rendered page presenting all colleges with multi-dimensional filtering, full-text search, sorting, and cursor-based pagination. The URL is the source of truth for filter state — every combination is shareable and bookmarkable.
+4.1.2 Filter Dimensions
+4.1.3 API Design
+4.1.4 Implementation Details
+Cursor pagination over offset: Offset pagination degrades at large offsets. Cursor-based (using the last item's cuid) stays O(1) regardless of how far into results the user is.
+TanStack Query + useInfiniteQuery: Client fetches with infinite scroll. When the user scrolls within 200px of the bottom, the next page is automatically fetched and appended.
+URL sync: nuqs library keeps filter state in the URL query string, enabling sharing and browser navigation without any client-side router complexity.
+Debounced search: 300ms debounce on the text input prevents API spam on every keystroke.
+Skeleton loading: While TanStack Query fetches, 12 CollegeCard skeletons are shown — no layout shift.
+4.2 Feature 2 — College Detail Page
+4.2.1 What It Does
+A rich, tabbed detail page for each college exposing overview, courses, placement history, and student reviews. Built with ISR (60-second revalidation) for fast loads without stale data.
+4.2.2 Page Sections
+4.2.3 ISR Strategy
+The page is statically generated at build time for the top 100 colleges by NIRF rank (via generateStaticParams). For any college outside that set, it is generated on first request and then cached. The revalidate = 60 config means Vercel will regenerate in the background every 60 seconds if the page has been visited — users always see a fast cached page with at most 60-second-old data.
+4.2.4 Save Button
+The save/unsave button is an optimistic UI pattern: the button flips state immediately on click, makes the API call in the background, and reverts on failure. This gives instant feedback without waiting for a round-trip. The button shows a login modal for unauthenticated users instead of making the API call.
+4.3 Feature 3 — Compare Colleges
+4.3.1 What It Does
+A side-by-side comparison tool for up to 3 colleges. Users select colleges from a search dialog and the comparison panel renders all key metrics in aligned rows, making differences immediately scannable.
+4.3.2 State Architecture
+Compare state is managed by a Zustand store persisted to localStorage. This means the comparison persists across page navigations and even browser refreshes. The store holds college IDs; the actual comparison data is fetched via a single batched API call.
+4.3.3 Comparison Rows
+4.4 Feature 4 — Authentication + Saved Items
+4.4.1 Auth Architecture
+JWT-based authentication with short-lived access tokens (15 min) and long-lived refresh tokens (7 days) stored as httpOnly cookies. The edge middleware validates the access token on every protected route without hitting the database.
+4.4.2 Saved Items Dashboard
+Authenticated users have a /dashboard page showing their saved colleges in a sortable grid. Saves are stored as SavedItem records (user + college many-to-many). The dashboard also shows comparison history and allows the user to remove saved items.
+5.1 What It Does
+The AI Counselor is a chat interface at /counselor. The student fills a profile form and then chats with the AI. The AI has access to the real college database through a structured context injection — it knows actual cutoffs, fees, and placement stats, not hallucinated data.
+Core Capabilities
+Profile-based shortlisting: Student inputs JEE Main/Advanced rank (or NEET/MHT-CET/other), preferred state, budget, and branch. Gemini ranks colleges from the database that match the profile.
+Cutoff safety analysis: For each recommended college, the AI explains whether the student's rank is safe, borderline, or risky based on historical cutoff data.
+Tradeoff explanations: AI explains pros/cons — e.g., "NIT Trichy has better placements but higher fees and is far from your home state."
+Follow-up Q&A: Full multi-turn conversation context — student can ask "What about private colleges in Pune?" and the AI understands the prior context.
+Comparison suggestions: AI can suggest adding specific colleges to the comparison tool via a structured action button embedded in its response.
+5.2 Technical Implementation
+5.2.1 RAG-lite Context Injection
+Rather than full vector-database RAG, a lighter approach is used: before every AI request, the backend queries the database for colleges that roughly match the student's filters (state, budget range, branch) and injects the top 20 results as structured JSON into the Gemini prompt context. This grounds the AI on real data.
+5.2.2 Streaming API Route
+5.2.3 Frontend — Streaming Chat UI
+The CounselorChat component uses the Vercel AI SDK's useChat hook to consume the streaming response and render text token-by-token as it arrives — the same UX pattern as Claude or ChatGPT. The profile form is a collapsible sidebar.
+5.3 Why This Is Genuinely Useful
+Current college discovery platforms force students to manually apply 8-10 filters, read dozens of pages, and mentally compare options themselves. The AI Counselor collapses this into a single conversation. A student with a JEE Main rank of 15,000 can ask "Which NITs should I target for CSE in Maharashtra with a budget under ₹2L/year?" and get a ranked, reasoned answer in seconds with actual cutoff safety assessments. This is the kind of feature that justifies a product's existence.
+6.1 Error Response Format
+All errors follow a consistent format so the frontend can handle them uniformly:
+7.1 State Management Strategy
+7.2 Component Architecture
+Components follow a strict hierarchy: Shadcn UI primitives → domain-specific composites → page-level layouts. This prevents style drift and makes the codebase navigable.
+7.3 Performance Considerations
+React Server Components: All data-fetching components that don't need interactivity are RSCs — no JS bundle for them, HTML is streamed directly.
+next/image: All college images use Next.js Image component with automatic WebP conversion, lazy loading, and blur placeholder.
+Font subsetting: Only Latin character set loaded for Inter font, reducing font load by ~70%.
+Bundle analysis: @next/bundle-analyzer run before deployment to catch accidental large imports.
+TanStack Query staleTime: College list data considered fresh for 60 seconds — navigating back to the listing page doesn't trigger a refetch.
+8.1 Environment Variables
+8.2 CI/CD Pipeline
+A realistic 7-day build plan with clear daily milestones:
+10.1 Edge Cases Handled
+10.2 Key Tradeoffs
+11.1 Input Validation (Zod)
+Every API route defines a Zod schema for its input. Validation runs before any business logic. On failure, a structured 400 response with field-level errors is returned.
+11.2 Security Measures
+SQL injection: Prisma's parameterized queries prevent SQL injection by design.
+XSS: React escapes all rendered strings. User-submitted review content is stripped of HTML server-side before storage.
+CSRF: API routes check Content-Type: application/json — browser form submissions (potential CSRF vector) are rejected.
+Rate limiting: All API routes: 100 req/min per IP. AI routes: 10 req/hour per user. Enforced via Upstash Redis sliding window.
+Password hashing: bcrypt with cost factor 12. Passwords never stored in plaintext.
+httpOnly cookies: Refresh token in httpOnly, Secure, SameSite=Strict cookie — inaccessible to JavaScript.
+EduFind is a focused, production-oriented college discovery platform that prioritizes depth over breadth. Four features are implemented to a high standard — search & listing, detail pages, comparison, and authentication — supported by a clean, scalable architecture. The AI Counselor is the standout differentiator: a Gemini-powered conversational tool grounded on real database data, making college shortlisting genuinely fast and intelligent for Indian students.
+Every architectural decision (cursor pagination, ISR, JWT rotation, Zustand for compare state, RAG-lite context injection) is deliberate and justified by real-world constraints. The codebase is structured to be extended — new features slot in without restructuring existing code.
+EduFind — Full Stack Track B Submission | AI Software Engineer Internship
+EduFind
+College Discovery Platform — Technical Architecture Document
+Applicant
+Sahil — Full Stack Engineer | Assignment
+AI Software Engineer Internship Demo Task
+Role
+Full Stack Engineer | Track
+Track B — College Discovery Platform
+Next.js 14 | TypeScript | TailwindCSS | Prisma ORM | PostgreSQL | Gemini AI
+1. Executive Summary
+# | Feature | Why This One
+1 | College Listing + Search | Core discovery flow; demonstrates search architecture, filtering, and pagination
+2 | College Detail Page | Rich data presentation; showcases nested data modeling and UI composition
+3 | Compare Colleges | Complex state management; shows frontend/backend coordination
+4 | Authentication + Saved Items | Essential for personalization; demonstrates JWT, middleware, and relational data
++ Bonus LLM Feature: AI College Counselor
+A conversational AI powered by Gemini 2.5 Flash that analyzes a student's profile (exam rank, budget, preferred location, branch of study) and provides ranked college recommendations with reasoning. Goes beyond filter-based matching to offer genuine counseling — explaining tradeoffs, flagging cutoff risks, and answering follow-up questions in context.
+2. System Architecture
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        BROWSER / CLIENT                                │
+│  Next.js App Router (React Server Components + Client Components)       │
+│  TailwindCSS  │  Shadcn UI  │  TanStack Query  │  Zustand              │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │ HTTP / RSC                           
+┌───────────────────────────────────▼─────────────────────────────────────┐
+│                     NEXT.JS SERVER (Vercel Edge / Node)                 │
+│  App Router Layout  │  Server Actions  │  API Routes (/api/*)            │
+│  JWT Middleware (Edge)  │  Rate Limiter  │  Input Validation (Zod)       │
+└──────┬────────────────────────┬───────────────────────┬─────────────────┘
+       │                        │                        │                  
+┌──────▼──────┐    ┌────────────▼──────────┐   ┌────────▼──────────────┐  
+│  Prisma ORM │    │   Gemini 2.5 Flash API │   │  Upstash Redis Cache  │  
+│  (Query     │    │   (AI Counselor,       │   │  (Search results,     │  
+│   Builder)  │    │    Smart Summaries)    │   │   Session data)       │  
+└──────┬──────┘    └───────────────────────┘   └───────────────────────┘  
+       │                                                                    
+┌──────▼──────────────────────────────────────────────────────────────────┐
+│               Neon PostgreSQL (Serverless)                               │
+│   colleges  │  reviews  │  courses  │  users  │  saved_items            │
+└─────────────────────────────────────────────────────────────────────────┘
+Route | Strategy | Reason | Example
+/colleges | SSR (dynamic) | Filter params in URL; must be fresh | search?q=iit&state=mh
+/colleges/[slug] | ISR (60s revalidate) | Mostly static, high traffic | /colleges/iit-bombay
+/compare | CSR | Fully interactive state machine | Side-by-side comparison UI
+/dashboard | SSR (auth-gated) | User-specific data, no caching | Saved colleges list
+/api/* | API Route (Node) | Data mutations, auth endpoints | POST /api/colleges/save
+/api/ai/* | API Route (streaming) | Gemini streaming response | POST /api/ai/counsel
+edufind/
+├── app/
+│   ├── (auth)/                    # Route group — login/signup pages
+│   │   ├── login/page.tsx
+│   │   └── signup/page.tsx
+│   ├── (main)/                    # Route group — public pages with shared layout
+│   │   ├── layout.tsx             # Navbar + Footer
+│   │   ├── page.tsx               # Home / landing
+│   │   ├── colleges/
+│   │   │   ├── page.tsx           # Listing + search (SSR)
+│   │   │   └── [slug]/page.tsx    # Detail page (ISR)
+│   │   ├── compare/page.tsx       # College comparison (CSR)
+│   │   └── counselor/page.tsx     # AI Counselor (CSR + streaming)
+│   ├── dashboard/                 # Auth-gated
+│   │   └── page.tsx              # Saved items, profile
+│   └── api/
+│       ├── auth/
+│       │   ├── login/route.ts
+│       │   ├── signup/route.ts
+│       │   └── refresh/route.ts
+│       ├── colleges/
+│       │   ├── route.ts           # GET (list), POST (admin)
+│       │   ├── [id]/route.ts      # GET (detail), PATCH, DELETE
+│       │   ├── [id]/save/route.ts # POST/DELETE toggle save
+│       │   └── compare/route.ts   # GET multi-college data
+│       ├── reviews/route.ts
+│       └── ai/
+│           └── counsel/route.ts   # Gemini streaming endpoint
+├── components/
+│   ├── ui/                        # Shadcn primitives
+│   ├── college/
+│   │   ├── CollegeCard.tsx
+│   │   ├── CollegeFilters.tsx
+│   │   ├── CollegeTable.tsx
+│   │   └── ComparePanel.tsx
+│   ├── auth/
+│   │   └── AuthModal.tsx
+│   └── ai/
+│       └── CounselorChat.tsx
+├── lib/
+│   ├── prisma.ts                  # Prisma client singleton
+│   ├── auth.ts                    # JWT helpers
+│   ├── gemini.ts                  # Gemini client + prompt builders
+│   ├── validations.ts             # Zod schemas
+│   └── cache.ts                   # Redis helpers
+├── hooks/
+│   ├── useColleges.ts
+│   ├── useCompare.ts
+│   └── useAuth.ts
+├── store/
+│   └── compareStore.ts            # Zustand — comparison state
+├── prisma/
+│   ├── schema.prisma
+│   └── seed.ts
+└── middleware.ts                  # JWT edge middleware
+3. Database Schema Design
+User ─────────────────────────────────────────────────────────────┐
+  │                                                               │
+  ├─< SavedItem >─ College ──< Course                            │
+  │                  │                                            │
+  └─< Review         ├─< Review (from users)                     │
+                     ├─< PlacementStat                           │
+                     └─< CollegeFacility                         │
+                                                                  │
+RefreshToken <─────────────────────────────────────────────────── ┘
+// prisma/schema.prisma
+
+model College {
+  id              String    @id @default(cuid())
+  slug            String    @unique                 // URL-safe identifier
+  name            String
+  shortName       String?
+  state           String
+  city            String
+  type            CollegeType  // GOVERNMENT | PRIVATE | DEEMED
+  category        String       // IIT | NIT | IIIT | State | Pvt
+  naacGrade       String?
+  nirfRank        Int?
+  establishedYear Int?
+  description     String?      @db.Text
+  imageUrl        String?
+  websiteUrl      String?
+
+  // Fees (annual, in INR)
+  feesMin         Int
+  feesMax         Int
+
+  // Aggregated placement data (denormalized for fast listing)
+  avgPackageLpa   Float?
+  maxPackageLpa   Float?
+  placementRate   Float?       // 0–100
+
+  // Rating
+  overallRating   Float        @default(0)
+  reviewCount     Int          @default(0)
+
+  // Relations
+  courses         Course[]
+  placements      PlacementStat[]
+  reviews         Review[]
+  savedBy         SavedItem[]
+  facilities      CollegeFacility[]
+
+  // Indexes
+  @@index([state, city])
+  @@index([type])
+  @@index([nirfRank])
+  @@index([feesMin, feesMax])
+  @@index([overallRating])
+  @@fulltext([name, city, state])  // PostgreSQL full-text search
+}
+
+model Course {
+  id          String    @id @default(cuid())
+  collegeId   String
+  college     College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  name        String    // B.Tech Computer Science
+  degree      String    // B.Tech | M.Tech | MBA | BCA
+  branch      String    // CSE | ECE | ME | Civil
+  durationYrs Int
+  feesPerYear Int
+  seats       Int?
+  cutoffJeeMain  Int?
+  cutoffJeeAdv   Int?
+  @@index([collegeId])
+  @@index([branch])
+}
+
+model PlacementStat {
+  id              String    @id @default(cuid())
+  collegeId       String
+  college         College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  year            Int
+  avgPackageLpa   Float
+  maxPackageLpa   Float
+  medianPackageLpa Float?
+  placedStudents  Int
+  totalStudents   Int
+  topRecruiters   String[]  // PostgreSQL array
+  @@index([collegeId, year])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(STUDENT)
+  createdAt    DateTime  @default(now())
+  savedItems   SavedItem[]
+  reviews      Review[]
+  tokens       RefreshToken[]
+}
+
+model SavedItem {
+  id          String   @id @default(cuid())
+  userId      String
+  collegeId   String
+  savedAt     DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college     College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  @@unique([userId, collegeId])  // Prevent duplicate saves
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  collegeId   String
+  userId      String
+  rating      Int      // 1–5
+  title       String
+  body        String   @db.Text
+  pros        String?
+  cons        String?
+  batch       Int?     // Graduation year
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  college     College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+4. Feature Specifications
+Filter | Values / Behavior
+Text search | Full-text search across name, city, state using PostgreSQL tsvector
+State | Multi-select dropdown (MH, DL, TN, KA, UP, …)
+College type | Government / Private / Deemed — checkbox group
+Category | IIT / NIT / IIIT / State / Private — checkbox group
+Fees range | Dual-thumb range slider (₹0 — ₹20L+ per year)
+NAAC grade | A++ / A+ / A / B++ dropdown
+Sort | NIRF rank, rating, fees (asc/desc), avg placement package
+Page size | 12 / 24 / 48 cards per page
+GET /api/colleges
+Query params:
+  q          string    Full-text search query
+  state      string[]  Multi-value (state=MH&state=DL)
+  type       string[]  GOVERNMENT | PRIVATE | DEEMED
+  category   string[]  IIT | NIT | IIIT | State | Private
+  feesMin    number    Annual fees lower bound (INR)
+  feesMax    number    Annual fees upper bound (INR)
+  naac       string[]  A++ | A+ | A | B++
+  sort       string    nirf_rank | rating | fees_asc | fees_desc | package
+  cursor     string    Cursor for next page (cuid of last item)
+  limit      number    Items per page (default 12, max 48)
+
+Response:
+  {
+    data: College[],       // Array of college objects
+    nextCursor: string | null,
+    totalCount: number,    // For "Showing X of Y results"
+    hasMore: boolean
+  }
+Tab / Section | Content
+Hero | Name, city, NAAC grade, NIRF rank, overall rating, save button, website link
+Overview | Description, founding year, type, facilities, contact
+Courses | Searchable/filterable course table — degree, branch, seats, fees, JEE cutoff
+Placements | Year-over-year chart (avg / median / max package), top recruiters badges
+Reviews | Paginated review cards with rating breakdown, pros/cons, batch info
+// store/compareStore.ts
+interface CompareStore {
+  selectedIds: string[]          // max 3
+  addCollege: (id: string) => void
+  removeCollege: (id: string) => void
+  clearAll: () => void
+}
+
+// API: GET /api/colleges/compare?ids=id1&ids=id2&ids=id3
+// Returns all three colleges in a single query using Prisma findMany({ where: { id: { in: ids } } })
+Row | Data Shown
+Basic info | Name, city, type, NAAC grade, NIRF rank
+Fees | Annual fees range with visual bar
+Placement avg | Avg LPA with colored indicator (green/yellow/red)
+Placement max | Highest package reported
+Placement rate | Percentage of students placed
+Rating | Star rating with review count
+Top recruiters | Badge list of top 5 companies
+Action | View full page / Remove from comparison
+Auth Flow:
+
+1. User submits login → POST /api/auth/login
+2. Server verifies password (bcrypt compare)
+3. Issues: access_token (JWT, 15min) + refresh_token (random UUID, 7d)
+4. refresh_token stored in DB + set as httpOnly cookie
+5. access_token returned in response body → stored in memory (Zustand)
+
+Token Refresh:
+1. TanStack Query interceptor detects 401 response
+2. Calls POST /api/auth/refresh with cookie (auto-sent by browser)
+3. Server validates refresh token against DB
+4. Issues new access_token + rotates refresh_token (old one deleted)
+5. Original request retried with new access_token
+
+Edge Middleware:
+  - Runs at Vercel Edge before page render
+  - Validates JWT signature (no DB call)
+  - Redirects /dashboard → /login if token missing/invalid
+5. LLM Feature — AI College Counselor (Gemini 2.5 Flash)
+This is EduFind's most distinctive feature and the primary differentiator from existing platforms like Careers360 and CollegeDunia. Rather than making students manually apply dozens of filters, the AI Counselor has a conversation with the student, understands their profile holistically, and produces a reasoned, ranked shortlist — explaining why each college was or wasn't included.
+// lib/gemini.ts — context building
+
+export async function buildCounselorContext(profile: StudentProfile) {
+  // Fetch relevant colleges from DB
+  const colleges = await prisma.college.findMany({
+    where: {
+      state: profile.preferredStates?.length ? { in: profile.preferredStates } : undefined,
+      feesMax: { lte: profile.budgetLpa * 100000 },
+      courses: { some: { branch: { in: profile.preferredBranches } } },
+    },
+    include: {
+      courses: { where: { branch: { in: profile.preferredBranches } } },
+      placements: { orderBy: { year: "desc" }, take: 1 },
+    },
+    orderBy: { nirfRank: "asc" },
+    take: 20,
+  });
+
+  return colleges.map(c => ({
+    name: c.name,
+    city: c.city,
+    state: c.state,
+    nirfRank: c.nirfRank,
+    feesPerYear: c.feesMin,
+    avgPackageLpa: c.avgPackageLpa,
+    jeeMainCutoff: c.courses[0]?.cutoffJeeMain,
+    jeeAdvCutoff: c.courses[0]?.cutoffJeeAdv,
+    naacGrade: c.naacGrade,
+    slug: c.slug,
+  }));
+}
+// app/api/ai/counsel/route.ts
+
+export async function POST(req: Request) {
+  const { messages, profile } = await req.json();
+
+  // Build real-data context
+  const collegeContext = await buildCounselorContext(profile);
+
+  const systemPrompt = `
+    You are EduFind's AI College Counselor for Indian students.
+    You have access to real college data from our database.
+    Always base recommendations on the DATA provided — never hallucinate.
+    
+    STUDENT PROFILE:
+    ${JSON.stringify(profile, null, 2)}
+    
+    AVAILABLE COLLEGES (filtered for this student):
+    ${JSON.stringify(collegeContext, null, 2)}
+    
+    Rules:
+    - Recommend only colleges from the data above
+    - Explain cutoff safety (safe / borderline / risky) for each
+    - Format recommendations as a ranked numbered list
+    - Be concise but thorough; use a friendly, helpful tone
+  `;
+
+  // Stream response from Gemini
+  const stream = await geminiClient.streamGenerateContent({
+    model: "gemini-2.5-flash",
+    contents: [{ role: "user", parts: [{ text: systemPrompt }] }, ...messages],
+  });
+
+  // Return as ReadableStream for SSE
+  return new Response(stream.body, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+  });
+}
+UX Decision | Rationale
+Streaming (SSE) | Users see text appear instantly vs. waiting 5–10s for a full response
+Markdown rendering | AI can use **bold**, numbered lists, and tables in its response
+"Add to Compare" buttons | AI embeds structured JSON actions; frontend parses and renders as buttons
+Conversation history | Full multi-turn context sent on every message for coherent follow-ups
+Rate limiting | 10 AI requests/hour per user (Upstash Redis) to control Gemini API costs
+6. Complete API Reference
+Method | Endpoint | Auth | Description
+GET | /api/colleges | None | List/search colleges with filters, cursor pagination
+GET | /api/colleges/:id | None | Full college detail with courses, placements, reviews
+GET | /api/colleges/compare | None | Batch fetch 2-3 colleges for comparison
+POST | /api/colleges/:id/save | Required | Save college to user's list
+DELETE | /api/colleges/:id/save | Required | Remove college from user's list
+GET | /api/reviews | None | Paginated reviews for a college
+POST | /api/reviews | Required | Submit a review (once per user per college)
+POST | /api/auth/signup | None | Register with email + password
+POST | /api/auth/login | None | Login, returns access token + sets refresh cookie
+POST | /api/auth/refresh | Cookie | Exchange refresh token for new access token
+POST | /api/auth/logout | Required | Revoke refresh token from DB
+GET | /api/user/saved | Required | Get current user's saved colleges
+POST | /api/ai/counsel | Optional | Streaming AI counselor (Gemini)
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",        // Machine-readable code
+    "message": "feesMin must be >= 0",  // Human-readable message
+    "details": { "field": "feesMin" }  // Optional: field-level detail (Zod errors)
+  }
+}
+
+Error codes used:
+  VALIDATION_ERROR     — Zod validation failed on input
+  UNAUTHORIZED         — Missing or invalid JWT
+  FORBIDDEN            — Valid JWT but insufficient permissions
+  NOT_FOUND            — Resource does not exist
+  CONFLICT             — Duplicate resource (e.g. already saved, already reviewed)
+  RATE_LIMITED         — Too many AI requests
+  INTERNAL_ERROR       — Unexpected server error (sanitized, no stack trace)
+7. Frontend Architecture
+State Type | Tool + Rationale
+Server data (colleges, reviews) | TanStack Query — caching, background refetch, infinite scroll, optimistic updates
+URL / filter state | nuqs — filters in URL query string; shareable, no hydration mismatch
+Compare selection (cross-page) | Zustand + localStorage persistence — survives navigation
+Auth state (token in memory) | Zustand — access token never in localStorage (XSS risk)
+Local UI state (modals, tabs) | React useState — co-located with the component that owns it
+Layer 1 — UI Primitives (Shadcn):
+  Button, Input, Select, Dialog, Badge, Slider, Tabs, Card, Skeleton, Toast
+
+Layer 2 — Domain Components:
+  CollegeCard        — summary card used in listing and search results
+  CollegeFilters     — filter panel (desktop sidebar + mobile sheet)
+  CourseTable        — sortable, searchable course list
+  PlacementChart     — recharts area chart of yearly placement data
+  ReviewCard         — review with rating, pros/cons, batch info
+  ComparePanel       — floating panel showing selected colleges count
+  CounselorChat      — AI chat window with streaming message rendering
+  SaveButton         — optimistic save/unsave with auth gate
+
+Layer 3 — Page Layouts:
+  CollegeListingPage — filters (sidebar) + grid + infinite scroll trigger
+  CollegeDetailPage  — hero + tabbed sections
+  ComparePage        — side-by-side comparison grid
+  DashboardPage      — saved items management
+8. Deployment Architecture
+Service | Provider + Config
+Frontend + API Routes | Vercel — automatic CI/CD from GitHub main branch
+Database | Neon PostgreSQL — serverless, connection pooling via PgBouncer
+Caching / Rate limiting | Upstash Redis — serverless Redis, used for API rate limiting
+Environment vars | .env.local (dev), Vercel env dashboard (prod)
+DB migrations | Prisma Migrate — npx prisma migrate deploy in CI pipeline
+Seed data | prisma/seed.ts — 200+ Indian colleges seeded from public NIRF data
+# .env.local
+DATABASE_URL=postgresql://user:pass@host/edufind?sslmode=require
+DATABASE_DIRECT_URL=postgresql://...   # Direct connection for migrations
+
+JWT_ACCESS_SECRET=<256-bit-random>
+JWT_REFRESH_SECRET=<256-bit-random>
+
+GEMINI_API_KEY=<google-ai-studio-key>
+
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=<token>
+
+NEXT_PUBLIC_APP_URL=https://edufind.vercel.app
+# .github/workflows/ci.yml (triggered on push to main)
+
+Jobs:
+  1. lint          — ESLint + TypeScript type-check
+  2. test          — Jest unit tests (validation logic, API handlers)
+  3. migrate       — npx prisma migrate deploy (only on merge to main)
+  4. deploy        — Vercel CLI deploy (triggered automatically by Vercel GitHub integration)
+9. Implementation Roadmap
+Day | Focus | Deliverables
+Day 1 | Foundation | Next.js project setup, Prisma schema, Neon DB connected, seed script with 50 colleges, Shadcn UI configured
+Day 2 | Auth | Signup/login API routes, JWT middleware, auth Zustand store, login/signup pages, dashboard route guard
+Day 3 | College Listing | GET /api/colleges with all filters, CollegeCard, filter sidebar, infinite scroll with TanStack Query, URL sync
+Day 4 | College Detail | GET /api/colleges/:id, tabbed detail page, ISR config, CoursesTable, PlacementChart, ReviewCard
+Day 5 | Compare + Save | Compare store, compare page with side-by-side grid, save/unsave API + optimistic UI, dashboard saved list
+Day 6 | AI Counselor | Gemini integration, streaming API route, CounselorChat UI, profile form, rate limiting with Upstash
+Day 7 | Polish + Deploy | Mobile responsiveness audit, loading/error states, seed full 200-college dataset, deploy to Vercel + record Loom
+10. Edge Cases & Tradeoffs
+Scenario | Handling | Where
+User saves same college twice | @@unique([userId, collegeId]) in DB; API returns 409 Conflict | Prisma schema + API route
+AI returns college not in DB | System prompt strictly restricts to injected context; output is validated | Gemini prompt engineering
+Filter produces 0 results | Empty state component with "Clear filters" CTA shown | CollegeListingPage
+Refresh token expired/stolen | Token deleted from DB on use (rotation); old token invalid immediately | Auth refresh route
+Compare with 2 vs 3 colleges | UI supports 2-3; comparison rows show "—" for missing data | ComparePanel
+College deleted while saved | SavedItem cascades delete (onDelete: Cascade in schema) | Prisma schema
+User submits 2 reviews | @@unique([userId, collegeId]) enforced at DB level; API returns 409 | Review model + route
+Gemini API down | Counselor shows error toast; degraded mode falls back to filter-based suggestions | CounselorChat error boundary
+Very long college name | CSS text-overflow: ellipsis + tooltip on hover in CollegeCard | CollegeCard component
+Mobile compare (3 cols) | Compare switches to stacked card layout below md breakpoint | CompareGrid responsive
+Decision | Rationale
+Cursor pagination over offset | More complex to implement but O(1) performance at any page depth. Offset breaks at 10k+ rows.
+Denormalized avg package on College | Avoids JOIN on every listing query. Updated via a background recalculation when new PlacementStat is inserted.
+JWT in memory, not localStorage | XSS cannot steal the access token. Slightly worse DX (token lost on refresh) mitigated by httpOnly refresh cookie auto-renewing.
+RAG-lite over full vector search | Vector search requires a separate embedding pipeline and pgvector. RAG-lite with structured SQL context is 90% as effective for this use case with far less infrastructure.
+ISR over full SSG | Full SSG would require rebuilding on every college data change. ISR gives static performance with 60-second freshness automatically.
+Zustand for compare state | Redux is overkill. Zustand + localStorage gives persistence with minimal boilerplate. The compare state is simple enough to not need a reducer pattern.
+11. Validation & Security
+// lib/validations.ts
+
+export const collegeQuerySchema = z.object({
+  q:        z.string().max(100).optional(),
+  state:    z.array(z.string().max(50)).max(10).optional(),
+  type:     z.array(z.enum(["GOVERNMENT", "PRIVATE", "DEEMED"])).optional(),
+  feesMin:  z.coerce.number().min(0).max(10_000_000).optional(),
+  feesMax:  z.coerce.number().min(0).max(10_000_000).optional(),
+  sort:     z.enum(["nirf_rank","rating","fees_asc","fees_desc","package"]).optional(),
+  cursor:   z.string().cuid().optional(),
+  limit:    z.coerce.number().min(1).max(48).default(12),
+}).refine(d => !d.feesMin || !d.feesMax || d.feesMin <= d.feesMax, {
+  message: "feesMin must be <= feesMax",
+});
+
+export const reviewCreateSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  title:  z.string().min(5).max(100),
+  body:   z.string().min(20).max(2000),
+  pros:   z.string().max(500).optional(),
+  cons:   z.string().max(500).optional(),
+  batch:  z.number().int().min(1950).max(new Date().getFullYear()).optional(),
+});
+12. Summary
+Architecture Strengths
+App Router RSC/Client split
+Edge JWT middleware (no DB on auth check)
+Cursor pagination at scale
+ISR for fast public pages
+Zod validation on all inputs
+Optimistic UI for saves
+Gemini grounded on real data
+Refresh token rotation | Known Limitations / Future Work
+No email verification (MVP scope)
+AI counselor not multi-language yet
+No admin panel for college edits
+Placement data manually seeded
+No OAuth (Google login)
+Mobile app (PWA) not in scope
+No push notifications for saves
+AI rate limits may frustrate heavy users
