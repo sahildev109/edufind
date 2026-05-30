@@ -9,8 +9,11 @@ type CompareState = {
 	removeCollege: (id: string) => void;
 	clearAll: () => void;
 };
+type ComparePersistedState = {
+  selectedIds: string[];
+};
 
-const storage = createJSONStorage<CompareState>(() => {
+const storage = createJSONStorage<ComparePersistedState>(() => {
 	if (typeof window === "undefined") {
 		return undefined as unknown as Storage;
 	}

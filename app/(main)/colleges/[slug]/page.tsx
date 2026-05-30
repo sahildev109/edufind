@@ -24,15 +24,20 @@ export const metadata: Metadata = {
 const formatInr = (value: number) =>
 	new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value);
 
-export async function generateStaticParams() {
-	const colleges = await prisma.college.findMany({
-		where: { nirfRank: { not: null } },
-		orderBy: { nirfRank: "asc" },
-		take: 100,
-		select: { slug: true },
-	});
+export const dynamicParams = true;
 
-	return colleges.map((college) => ({ slug: college.slug }));
+export async function generateStaticParams() {
+  try {
+    const colleges = await prisma.college.findMany({
+      where: { nirfRank: { not: null } },
+      orderBy: { nirfRank: "asc" },
+      take: 100,
+      select: { slug: true },
+    });
+    return colleges.map((college) => ({ slug: college.slug }));
+  } catch {
+    return [];
+  }
 }
 
 export default async function CollegeDetailPage({
@@ -58,7 +63,7 @@ export default async function CollegeDetailPage({
 				include: { user: { select: { name: true } } },
 			},
 		},
-	});
+	}).catch(() => null);
 
 	if (!college) {
 		notFound();

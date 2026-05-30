@@ -61,7 +61,7 @@ export default function CoursesTable({ courses }: { courses: CourseItem[] }) {
           placeholder="Search degree, branch, or course"
           className="min-w-[240px] flex-1"
         />
-        <Select value={degree} onValueChange={setDegree}>
+        <Select value={degree} onValueChange={(value) => setDegree(value ?? "")}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Filter by degree" />
           </SelectTrigger>

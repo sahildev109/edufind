@@ -220,8 +220,9 @@ export default function CollegeFilters() {
 							max={2_000_000}
 							step={50_000}
 							onValueChange={(values) => {
-								setFeesMin(values[0]);
-								setFeesMax(values[1]);
+								const range = values as number[];
+        	setFeesMin(range[0]);
+        	setFeesMax(range[1]);
 							}}
 						/>
 					</div>
@@ -232,7 +233,7 @@ export default function CollegeFilters() {
 							<Select
 								value={filters.naac[0] ?? "any"}
 								onValueChange={(value) =>
-									setNaac(value === "any" ? null : [value])
+									setNaac(value && value !== "any" ? [value] : null)
 								}
 							>
 								<SelectTrigger>

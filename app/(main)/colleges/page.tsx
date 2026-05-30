@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import CollegesPageClient from "./CollegesPageClient";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
 	title: "Colleges | EduFind",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function CollegesPage() {
-	return <CollegesPageClient />;
+	  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <CollegesPageClient />
+    </Suspense>
+  );
 }

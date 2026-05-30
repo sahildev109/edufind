@@ -96,15 +96,13 @@ export default function HomePage() {
 						college data.
 					</p>
 					<div className="flex flex-wrap gap-3">
-						<Button
-							size="lg"
-							render={<Link href="/colleges" />}
-						>
+						<Button size="lg" nativeButton={false} render={<Link href="/colleges" />}>
 							Explore colleges
 						</Button>
 						<Button
 							variant="outline"
 							size="lg"
+							nativeButton={false}
 							render={<Link href="/counselor" />}
 						>
 							Try the AI counselor
@@ -359,14 +357,12 @@ export default function HomePage() {
 						<Button
 							variant="secondary"
 							size="lg"
+							nativeButton={false}
 							render={<Link href="/counselor" />}
 						>
 							Talk to the counselor
 						</Button>
-						<Button
-							size="lg"
-							render={<Link href="/colleges" />}
-						>
+						<Button size="lg" nativeButton={false} render={<Link href="/colleges" />}>
 							Browse colleges
 						</Button>
 					</div>

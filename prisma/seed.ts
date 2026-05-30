@@ -3,6 +3,10 @@ import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 
 const prisma = new PrismaClient();
+type CollegeType =
+  | "GOVERNMENT"
+  | "PRIVATE"
+  | "DEEMED";
 
 const createRng = (seed: number) => {
 	let value = seed;
@@ -244,7 +248,7 @@ const buildCollegeData = async () => {
 		shortName?: string;
 		state: string;
 		city: string;
-		type: "GOVERNMENT" | "PRIVATE" | "DEEMED";
+		type: CollegeType;
 		category: string;
 		naacGrade?: string;
 		nirfRank?: number;
@@ -320,7 +324,7 @@ const buildCollegeData = async () => {
 			shortName: definition.shortName,
 			state: definition.state,
 			city: definition.city,
-			type: definition.type,
+			type: definition.type as CollegeType,
 			category: definition.category,
 			naacGrade: pick(gradePool),
 			nirfRank: definition.category === "IIT" ? 1 + index : 20 + index,
