@@ -1,0 +1,168 @@
+generator client {
+	provider = "prisma-client-js"
+    previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+	provider = "postgresql"
+	url      = env("DATABASE_URL")
+}
+
+enum CollegeType {
+	GOVERNMENT
+	PRIVATE
+	DEEMED
+}
+
+enum Role {
+	STUDENT
+}
+
+model College {
+	id              String    @id @default(cuid())
+	slug            String    @unique // URL-safe identifier
+	name            String
+	shortName       String?
+	state           String
+	city            String
+	type            CollegeType // GOVERNMENT | PRIVATE | DEEMED
+	category        String     // IIT | NIT | IIIT | State | Pvt
+	naacGrade       String?
+	nirfRank        Int?
+	establishedYear Int?
+	description     String?   @db.Text
+	imageUrl        String?
+	websiteUrl      String?
+	// Fees (annual, in INR)
+	feesMin         Int
+	feesMax         Int
+	// Aggregated placement data (denormalized for fast listing)
+	avgPackageLpa   Float?
+	maxPackageLpa   Float?
+	placementRate   Float?    // 0-100
+	// Rating
+	overallRating   Float     @default(0)
+	reviewCount     Int       @default(0)
+	// Relations
+	courses         Course[]
+	placements      PlacementStat[]
+	reviews         Review[]
+	savedBy         SavedItem[]
+	facilities      CollegeFacility[]
+	// Indexes
+	@@index([state, city])
+	@@index([type])
+	@@index([nirfRank])
+	@@index([feesMin, feesMax])
+	@@index([overallRating])
+	@@index([name, city, state]) // PostgreSQL full-text search
+}
+
+model Course {
+	id            String  @id @default(cuid())
+	collegeId     String
+	college       College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+	name          String  // B.Tech Computer Science
+	degree        String  // B.Tech | M.Tech | MBA | BCA
+	branch        String  // CSE | ECE | ME | Civil
+	durationYrs   Int
+	feesPerYear   Int
+	seats         Int?
+	cutoffJeeMain Int?
+	cutoffJeeAdv  Int?
+
+	@@index([collegeId])
+	@@index([branch])
+}
+
+model PlacementStat {
+	id               String  @id @default(cuid())
+	collegeId        String
+	college          College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+	year             Int
+	avgPackageLpa    Float
+	maxPackageLpa    Float
+	medianPackageLpa Float?
+	placedStudents   Int
+	totalStudents    Int
+	topRecruiters    String[] // PostgreSQL array
+
+	@@index([collegeId, year])
+}
+
+model CollegeFacility {
+	id        String  @id @default(cuid())
+	collegeId String
+	name      String
+	college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+}
+
+model User {
+	id           String         @id @default(cuid())
+	email        String         @unique
+	name         String
+	passwordHash String
+	role         Role           @default(STUDENT)
+	createdAt    DateTime       @default(now())
+	savedItems   SavedItem[]
+	reviews      Review[]
+	tokens       RefreshToken[]
+	counselorThread CounselorThread?
+}
+
+model CounselorThread {
+	id        String             @id @default(cuid())
+	userId    String             @unique
+	createdAt DateTime           @default(now())
+	updatedAt DateTime           @updatedAt
+	user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+	messages  CounselorMessage[]
+
+	@@index([userId, updatedAt])
+}
+
+model CounselorMessage {
+	id        String           @id @default(cuid())
+	threadId  String
+	role      String
+	content   String           @db.Text
+	createdAt DateTime         @default(now())
+	thread    CounselorThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+	@@index([threadId, createdAt])
+}
+
+model SavedItem {
+	id        String   @id @default(cuid())
+	userId    String
+	collegeId String
+	savedAt   DateTime @default(now())
+	user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+	college   College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+	@@unique([userId, collegeId]) // Prevent duplicate saves
+}
+
+model Review {
+	id         String   @id @default(cuid())
+	collegeId  String
+	userId     String
+	rating     Int      // 1-5
+	title      String
+	body       String   @db.Text
+	pros       String?
+	cons       String?
+	batch      Int?     // Graduation year
+	isVerified Boolean  @default(false)
+	createdAt  DateTime @default(now())
+	college    College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+	user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+	id        String   @id @default(cuid())
+	userId    String
+	token     String   @unique
+	expiresAt DateTime
+	user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
